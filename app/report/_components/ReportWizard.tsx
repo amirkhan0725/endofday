@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { isNative, pickMultiplePhotosNative } from '@/lib/native-camera';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getProjects, saveProject, saveReport, getReports } from '@/lib/storage';
@@ -317,6 +318,20 @@ export default function ReportWizard() {
     const compressed = results.flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
     setPhotos(prev => [...prev, ...compressed].slice(0, 8));
     setPhotoProcessing(false);
+  }
+
+  // On native (iOS/Android) open the platform camera/library sheet
+  async function handleNativePhotoPick() {
+    if (photos.length >= 8) return;
+    setPhotoProcessing(true);
+    try {
+      const base64Strings = await pickMultiplePhotosNative();
+      // Native camera returns raw base64 — prepend data URI prefix for consistency
+      const dataUris = base64Strings.map(b64 => `data:image/jpeg;base64,${b64}`);
+      setPhotos(prev => [...prev, ...dataUris].slice(0, 8));
+    } finally {
+      setPhotoProcessing(false);
+    }
   }
 
   // ── Subs ───────────────────────────────────────────────────────────────────
@@ -1032,16 +1047,31 @@ export default function ReportWizard() {
                   <span className="text-sm font-bold text-slate-700">Site photos</span>
                   <span className="text-xs text-slate-400">— AI will analyze them</span>
                 </div>
-                <label
-                  htmlFor="photo-upload"
-                  className={`cursor-pointer text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-                    photoProcessing || photos.length >= 8
-                      ? 'text-slate-300 pointer-events-none'
-                      : 'text-amber-600 hover:bg-amber-50'
-                  }`}
-                >
-                  {photoProcessing ? 'Processing…' : photos.length >= 8 ? 'Max 8' : '+ Add photos'}
-                </label>
+                {isNative() ? (
+                  <button
+                    type="button"
+                    onClick={handleNativePhotoPick}
+                    disabled={photoProcessing || photos.length >= 8}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                      photoProcessing || photos.length >= 8
+                        ? 'text-slate-300 cursor-not-allowed'
+                        : 'text-amber-600 hover:bg-amber-50'
+                    }`}
+                  >
+                    {photoProcessing ? 'Processing…' : photos.length >= 8 ? 'Max 8' : '+ Add photos'}
+                  </button>
+                ) : (
+                  <label
+                    htmlFor="photo-upload"
+                    className={`cursor-pointer text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                      photoProcessing || photos.length >= 8
+                        ? 'text-slate-300 pointer-events-none'
+                        : 'text-amber-600 hover:bg-amber-50'
+                    }`}
+                  >
+                    {photoProcessing ? 'Processing…' : photos.length >= 8 ? 'Max 8' : '+ Add photos'}
+                  </label>
+                )}
                 <input
                   id="photo-upload"
                   type="file"
@@ -1068,13 +1098,24 @@ export default function ReportWizard() {
                   ))}
                 </div>
               ) : (
-                <label
-                  htmlFor="photo-upload"
-                  className="flex flex-col items-center justify-center gap-2 py-8 cursor-pointer text-slate-300 hover:text-slate-400 transition-colors"
-                >
-                  <Camera size={28} />
-                  <span className="text-xs font-medium">Tap to add site photos</span>
-                </label>
+                isNative() ? (
+                  <button
+                    type="button"
+                    onClick={handleNativePhotoPick}
+                    className="w-full flex flex-col items-center justify-center gap-2 py-8 text-slate-300 hover:text-slate-400 transition-colors"
+                  >
+                    <Camera size={28} />
+                    <span className="text-xs font-medium">Tap to add site photos</span>
+                  </button>
+                ) : (
+                  <label
+                    htmlFor="photo-upload"
+                    className="flex flex-col items-center justify-center gap-2 py-8 cursor-pointer text-slate-300 hover:text-slate-400 transition-colors"
+                  >
+                    <Camera size={28} />
+                    <span className="text-xs font-medium">Tap to add site photos</span>
+                  </label>
+                )
               )}
             </div>
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EndOfDay</string>
+    <string name="title_activity_main">EndOfDay</string>
+    <string name="package_name">com.endofday.app</string>
+    <string name="custom_url_scheme">com.endofday.app</string>
+</resources>
