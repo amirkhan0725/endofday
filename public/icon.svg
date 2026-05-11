@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#f59e0b"/>
+  <!-- Hard hat brim -->
+  <rect x="108" y="318" width="296" height="36" rx="18" fill="#1e293b"/>
+  <!-- Hard hat dome -->
+  <path d="M160 318 Q160 160 256 148 Q352 160 352 318Z" fill="#1e293b"/>
+  <!-- Highlight stripe -->
+  <rect x="226" y="148" width="60" height="170" rx="8" fill="#f59e0b" opacity="0.25"/>
+</svg>

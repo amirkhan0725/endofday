@@ -1,0 +1,169 @@
+import { Resend } from 'resend';
+import { createAdminClient } from '@/lib/supabase-server';
+import type { ReportSections } from '@/types';
+
+// Client created per-request so process.env is guaranteed populated at call time
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY is not set');
+  return new Resend(key);
+}
+
+// TODO: verify a domain in Resend dashboard and update this address
+const FROM = 'EndOfDay Reports <onboarding@resend.dev>';
+
+function buildEmailHtml(
+  projectName: string,
+  date: string,
+  sections: ReportSections,
+  recipientName: string | undefined,
+  reportId?: string,
+  projectId?: string,
+): string {
+  const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,';
+  const sectionRows = [
+    { label: 'Weather Conditions',         value: sections.weatherConditions },
+    { label: 'Labor Summary',              value: sections.laborSummary },
+    { label: 'Work Completed Today',       value: sections.workCompleted },
+    { label: 'Materials Delivered / Used', value: sections.materialsUsed },
+    { label: 'Equipment On Site',          value: sections.equipmentOnSite },
+    { label: 'Issues, Delays & RFIs',      value: sections.issuesAndDelays },
+    { label: 'Safety Observations',        value: sections.safetyNotes },
+    { label: 'Plan for Tomorrow',          value: sections.lookahead },
+  ];
+
+  const rows = sectionRows.map(({ label, value }) => `
+    <tr>
+      <td style="padding:16px 24px;border-bottom:1px solid #e2e8f0;vertical-align:top">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin-bottom:6px">${label}</div>
+        <div style="font-size:14px;color:#1e293b;line-height:1.6;white-space:pre-wrap">${value ?? '—'}</div>
+      </td>
+    </tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr><td align="center" style="padding:32px 16px">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:#f59e0b;border-radius:12px 12px 0 0;padding:20px 24px">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78350f;margin-bottom:4px">Daily Construction Report</div>
+                  <div style="font-size:20px;font-weight:700;color:#1c1917">${projectName}</div>
+                  <div style="font-size:13px;color:#78350f;margin-top:2px">${date}</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Project Info -->
+        <tr>
+          <td style="background:#1e293b;padding:16px 24px">
+            <div style="font-size:13px;color:#94a3b8;line-height:1.5">${sections.projectInfo ?? ''}</div>
+          </td>
+        </tr>
+
+        <!-- Greeting -->
+        <tr>
+          <td style="background:#ffffff;padding:20px 24px 0;font-size:14px;color:#475569">${greeting}</td>
+        </tr>
+        <tr>
+          <td style="background:#ffffff;padding:4px 24px 16px;font-size:14px;color:#475569">
+            Please find today's construction report below.
+          </td>
+        </tr>
+
+        <!-- Sections -->
+        <tr>
+          <td style="background:#ffffff">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${rows}
+            </table>
+          </td>
+        </tr>
+
+        <!-- Acknowledge CTA -->
+        ${reportId && projectId ? `
+        <tr>
+          <td style="background:#f0fdf4;border-top:1px solid #d1fae5;padding:20px 24px;text-align:center">
+            <div style="font-size:13px;color:#374151;margin-bottom:12px">
+              Reviewed and got no questions?
+            </div>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://endofday.app'}/projects/${projectId}#report-${reportId}"
+               style="display:inline-block;background:#059669;color:#ffffff;font-weight:700;font-size:14px;padding:10px 24px;border-radius:8px;text-decoration:none;">
+              ✓ Acknowledge This Report
+            </a>
+            <div style="font-size:11px;color:#9ca3af;margin-top:8px">
+              One click creates a permanent record that you reviewed this report.
+            </div>
+          </td>
+        </tr>` : ''}
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f1f5f9;border-radius:0 0 12px 12px;padding:16px 24px;text-align:center">
+            <div style="font-size:12px;color:#94a3b8">
+              Generated by <strong style="color:#64748b">EndOfDay</strong> — AI Construction Report Generator
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function POST(request: Request) {
+  // Require valid Supabase session
+  const authHeader = request.headers.get('authorization');
+  const token = authHeader?.replace('Bearer ', '').trim();
+  if (!token) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const admin = createAdminClient();
+  const { data: { user }, error: authErr } = await admin.auth.getUser(token);
+  if (authErr || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { email, recipientName, projectName, date, sections, reportId, projectId } = body as {
+    email: string;
+    recipientName?: string;
+    projectName: string;
+    date: string;
+    sections: ReportSections;
+    reportId?: string;
+    projectId?: string;
+  };
+
+  if (!email || !projectName || !date || !sections) {
+    return Response.json({ error: 'Missing required fields' }, { status: 400 });
+  }
+
+  const html = buildEmailHtml(projectName, date, sections, recipientName, reportId, projectId);
+
+  const { error } = await getResend().emails.send({
+    from: FROM,
+    to: email,
+    subject: `Daily Report — ${projectName} — ${date}`,
+    html,
+  });
+
+  if (error) {
+    console.error('Resend error:', error);
+    return Response.json({ error: 'Failed to send email' }, { status: 500 });
+  }
+
+  return Response.json({ success: true });
+}
